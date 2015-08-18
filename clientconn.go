@@ -46,6 +46,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/transport"
+	"google.golang.org/grpc/monitoring"
 )
 
 var (
@@ -79,6 +80,7 @@ type dialOptions struct {
 	block    bool
 	insecure bool
 	copts    transport.ConnectOptions
+	monitor	monitoring.RpcMonitor
 }
 
 // DialOption configures how we set up the connection.
@@ -143,6 +145,13 @@ func WithUserAgent(s string) DialOption {
 	}
 }
 
+// WithMonitoring returns a DialOption which sets the monitoring to use for this connection..
+func WithMonitoring(m monitoring.RpcMonitor) DialOption {
+	return func(o *dialOptions) {
+		o.monitor = m
+	}
+}
+
 // Dial creates a client connection the given target.
 func Dial(target string, opts ...DialOption) (*ClientConn, error) {
 	cc := &ClientConn{
@@ -153,6 +162,10 @@ func Dial(target string, opts ...DialOption) (*ClientConn, error) {
 	}
 	if cc.dopts.picker == nil {
 		cc.dopts.picker = &unicastPicker{}
+	}
+	if cc.dopts.monitor == nil {
+		// Set the default to a no-op monitor.
+		cc.dopts.monitor = &monitoring.NoOpMonitor{}
 	}
 	if err := cc.dopts.picker.Init(cc); err != nil {
 		return nil, err
