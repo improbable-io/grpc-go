@@ -165,7 +165,8 @@ func newHPACKDecoder() *hpackDecoder {
 		case ":path":
 			d.state.method = f.Value
 		default:
-			if !isReservedHeader(f.Name) {
+			// :authority is necessary for grpc proxy to work.
+			if !isReservedHeader(f.Name)|| f.Name == ":authority"  {
 				if f.Name == "user-agent" {
 					i := strings.LastIndex(f.Value, " ")
 					if i == -1 {

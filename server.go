@@ -56,6 +56,9 @@ import (
 
 type methodHandler func(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error)
 
+// UnknownServiceHandler is a signature of a method that is called when an RPC call to an undefined service is made.
+type UnknownServiceHandler func(t transport.ServerTransport, stream *transport.Stream)
+
 // MethodDesc represents an RPC service's method specification.
 type MethodDesc struct {
 	MethodName string
@@ -95,6 +98,7 @@ type options struct {
 	codec                Codec
 	monitor 			 monitoring.RpcMonitor
 	maxConcurrentStreams uint32
+	unknownHandler		 UnknownServiceHandler
 }
 
 // A ServerOption sets options.
@@ -126,6 +130,13 @@ func Creds(c credentials.Credentials) ServerOption {
 func Monitoring(m monitoring.RpcMonitor) ServerOption {
 	return func(o *options) {
 		o.monitor = m
+	}
+}
+
+// Unknown service handler
+func UnknownHandler(handler UnknownServiceHandler) ServerOption {
+	return func(o *options) {
+		o.unknownHandler = handler
 	}
 }
 
@@ -489,8 +500,13 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 	method := sm[pos+1:]
 	srv, ok := s.m[service]
 	if !ok {
-		if err := t.WriteStatus(stream, codes.Unimplemented, fmt.Sprintf("unknown service %v", service)); err != nil {
-			grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
+		if s.opts.unknownHandler != nil {
+			s.opts.unknownHandler(t, stream)
+			trInfo.tr.Finish()
+		} else {
+			if err := t.WriteStatus(stream, codes.Unimplemented, fmt.Sprintf("unknown service %v", service)); err != nil {
+				grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
+			}
 		}
 		return
 	}

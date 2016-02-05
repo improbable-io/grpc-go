@@ -310,7 +310,8 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (_ *Strea
 		t.hEnc.WriteField(hpack.HeaderField{Name: "grpc-timeout", Value: timeoutEncode(timeout)})
 	}
 	for k, v := range authData {
-		t.hEnc.WriteField(hpack.HeaderField{Name: k, Value: v})
+		// TODO(michal): Lower case for https://github.com/grpc/grpc-go/issues/415
+		t.hEnc.WriteField(hpack.HeaderField{Name: strings.ToLower(k), Value: v})
 	}
 	var (
 		hasMD      bool
@@ -320,7 +321,8 @@ func (t *http2Client) NewStream(ctx context.Context, callHdr *CallHdr) (_ *Strea
 		hasMD = true
 		for k, v := range md {
 			for _, entry := range v {
-				t.hEnc.WriteField(hpack.HeaderField{Name: k, Value: entry})
+				// TODO(michal): Lower case for https://github.com/grpc/grpc-go/issues/415
+				t.hEnc.WriteField(hpack.HeaderField{Name: strings.ToLower(k), Value: entry})
 			}
 		}
 	}
