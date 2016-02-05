@@ -31,43 +31,52 @@
  *
  */
 
-package main
+package grpc
 
 import (
-	"flag"
-	"net"
-	"strconv"
+	"testing"
+	"time"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/grpclog"
-	"google.golang.org/grpc/interop"
-	testpb "google.golang.org/grpc/interop/grpc_testing"
 )
 
-var (
-	useTLS   = flag.Bool("use_tls", false, "Connection uses TLS if true, else plain TCP")
-	certFile = flag.String("tls_cert_file", "testdata/server1.pem", "The TLS cert file")
-	keyFile  = flag.String("tls_key_file", "testdata/server1.key", "The TLS key file")
-	port     = flag.Int("port", 10000, "The server port")
-)
+const tlsDir = "testdata/"
 
-func main() {
-	flag.Parse()
-	p := strconv.Itoa(*port)
-	lis, err := net.Listen("tcp", ":"+p)
+func TestDialTimeout(t *testing.T) {
+	conn, err := Dial("Non-Existent.Server:80", WithTimeout(time.Millisecond), WithBlock(), WithInsecure())
+	if err == nil {
+		conn.Close()
+	}
+	if err != ErrClientConnTimeout {
+		t.Fatalf("Dial(_, _) = %v, %v, want %v", conn, err, ErrClientConnTimeout)
+	}
+}
+
+func TestTLSDialTimeout(t *testing.T) {
+	creds, err := credentials.NewClientTLSFromFile(tlsDir+"ca.pem", "x.test.youtube.com")
 	if err != nil {
-		grpclog.Fatalf("failed to listen: %v", err)
+		t.Fatalf("Failed to create credentials %v", err)
 	}
-	var opts []grpc.ServerOption
-	if *useTLS {
-		creds, err := credentials.NewServerTLSFromFile(*certFile, *keyFile)
-		if err != nil {
-			grpclog.Fatalf("Failed to generate credentials %v", err)
-		}
-		opts = []grpc.ServerOption{grpc.Creds(creds)}
+	conn, err := Dial("Non-Existent.Server:80", WithTransportCredentials(creds), WithTimeout(time.Millisecond), WithBlock())
+	if err == nil {
+		conn.Close()
 	}
-	server := grpc.NewServer(opts...)
-	testpb.RegisterTestServiceServer(server, interop.NewTestServer())
-	server.Serve(lis)
+	if err != ErrClientConnTimeout {
+		t.Fatalf("grpc.Dial(_, _) = %v, %v, want %v", conn, err, ErrClientConnTimeout)
+	}
+}
+
+func TestCredentialsMisuse(t *testing.T) {
+	creds, err := credentials.NewClientTLSFromFile(tlsDir+"ca.pem", "x.test.youtube.com")
+	if err != nil {
+		t.Fatalf("Failed to create credentials %v", err)
+	}
+	// Two conflicting credential configurations
+	if _, err := Dial("Non-Existent.Server:80", WithTransportCredentials(creds), WithTimeout(time.Millisecond), WithBlock(), WithInsecure()); err != ErrCredentialsMisuse {
+		t.Fatalf("Dial(_, _) = _, %v, want _, %v", err, ErrCredentialsMisuse)
+	}
+	// security info on insecure connection
+	if _, err := Dial("Non-Existent.Server:80", WithPerRPCCredentials(creds), WithTimeout(time.Millisecond), WithBlock(), WithInsecure()); err != ErrCredentialsMisuse {
+		t.Fatalf("Dial(_, _) = _, %v, want _, %v", err, ErrCredentialsMisuse)
+	}
 }
