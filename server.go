@@ -96,6 +96,10 @@ type Server struct {
 	events trace.EventLog
 }
 
+// UnknownServiceHandler is a signature of a method that is called when an RPC call to an undefined service is made.
+// Remember to always close the `ServerTransport` with WriteStatus.
+type UnknownServiceHandler func(t transport.ServerTransport, stream *transport.Stream, tr trace.Trace)
+
 type options struct {
 	creds                credentials.TransportCredentials
 	codec                Codec
@@ -105,6 +109,7 @@ type options struct {
 	streamInt            StreamServerInterceptor
 	maxConcurrentStreams uint32
 	useHandlerImpl       bool // use http.Handler-based server
+	unknownHandler       UnknownServiceHandler
 }
 
 // A ServerOption sets options.
@@ -146,6 +151,13 @@ func Creds(c credentials.TransportCredentials) ServerOption {
 	}
 }
 
+// UnknownHandler sets the handling function to be used when RPCs encounter undefined services.
+func UnknownHandler(handler UnknownServiceHandler) ServerOption {
+	return func(o *options) {
+		o.unknownHandler = handler
+	}
+}
+
 // UnaryInterceptor returns a ServerOption that sets the UnaryServerInterceptor for the
 // server. Only one unary interceptor can be installed. The construction of multiple
 // interceptors (e.g., chaining) can be implemented at the caller.
@@ -179,6 +191,9 @@ func NewServer(opt ...ServerOption) *Server {
 	if opts.codec == nil {
 		// Set the default codec.
 		opts.codec = protoCodec{}
+	}
+	if opts.unknownHandler == nil {
+		opts.unknownHandler = handleUnknownStream
 	}
 	s := &Server{
 		lis:   make(map[net.Listener]bool),
@@ -690,6 +705,10 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 }
 
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Stream, trInfo *traceInfo) {
+	var trace trace.Trace
+	if trInfo != nil {
+		trace = trInfo.tr
+	}
 	sm := stream.Method()
 	if sm != "" && sm[0] == '/' {
 		sm = sm[1:]
@@ -716,20 +735,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 	method := sm[pos+1:]
 	srv, ok := s.m[service]
 	if !ok {
-		if trInfo != nil {
-			trInfo.tr.LazyLog(&fmtStringer{"Unknown service %v", []interface{}{service}}, true)
-			trInfo.tr.SetError()
-		}
-		if err := t.WriteStatus(stream, codes.Unimplemented, fmt.Sprintf("unknown service %v", service)); err != nil {
-			if trInfo != nil {
-				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-				trInfo.tr.SetError()
-			}
-			grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
-		}
-		if trInfo != nil {
-			trInfo.tr.Finish()
-		}
+		s.opts.unknownHandler(t, stream, trace)
 		return
 	}
 	// Unary RPC or Streaming RPC?
@@ -741,20 +747,26 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		s.processStreamingRPC(t, stream, srv, sd, trInfo)
 		return
 	}
-	if trInfo != nil {
-		trInfo.tr.LazyLog(&fmtStringer{"Unknown method %v", []interface{}{method}}, true)
-		trInfo.tr.SetError()
+	s.opts.unknownHandler(t, stream, trace)
+}
+
+func handleUnknownStream(t transport.ServerTransport, stream *transport.Stream, tr trace.Trace) {
+	sm := stream.Method()
+	if tr != nil {
+		tr.LazyLog(&fmtStringer{"Unknown method %v", []interface{}{sm}}, true)
+		tr.SetError()
 	}
-	if err := t.WriteStatus(stream, codes.Unimplemented, fmt.Sprintf("unknown method %v", method)); err != nil {
-		if trInfo != nil {
-			trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-			trInfo.tr.SetError()
+	if err := t.WriteStatus(stream, codes.Unimplemented, fmt.Sprintf("unknown method %v", sm)); err != nil {
+		if tr != nil {
+			tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
+			tr.SetError()
 		}
 		grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
 	}
-	if trInfo != nil {
-		trInfo.tr.Finish()
+	if tr != nil {
+		tr.Finish()
 	}
+	return
 }
 
 // Stop stops the gRPC server. It immediately closes all open
