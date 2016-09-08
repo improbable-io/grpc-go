@@ -37,6 +37,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/oauth"
 )
@@ -63,7 +65,31 @@ func TestTLSDialTimeout(t *testing.T) {
 		conn.Close()
 	}
 	if err != ErrClientConnTimeout {
-		t.Fatalf("grpc.Dial(_, _) = %v, %v, want %v", conn, err, ErrClientConnTimeout)
+		t.Fatalf("Dial(_, _) = %v, %v, want %v", conn, err, ErrClientConnTimeout)
+	}
+}
+
+func TestTLSServerNameOverwrite(t *testing.T) {
+	overwriteServerName := "over.write.server.name"
+	creds, err := credentials.NewClientTLSFromFile(tlsDir+"ca.pem", overwriteServerName)
+	if err != nil {
+		t.Fatalf("Failed to create credentials %v", err)
+	}
+	conn, err := Dial("Non-Existent.Server:80", WithTransportCredentials(creds), WithTimeout(time.Millisecond))
+	if err != nil {
+		t.Fatalf("Dial(_, _) = _, %v, want _, <nil>", err)
+	}
+	conn.Close()
+	if conn.authority != overwriteServerName {
+		t.Fatalf("%v.authority = %v, want %v", conn, conn.authority, overwriteServerName)
+	}
+}
+
+func TestDialContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := DialContext(ctx, "Non-Existent.Server:80", WithBlock(), WithInsecure()); err != context.Canceled {
+		t.Fatalf("DialContext(%v, _) = _, %v, want _, %v", ctx, err, context.Canceled)
 	}
 }
 
