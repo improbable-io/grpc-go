@@ -179,7 +179,10 @@ func (s *server) start(t *testing.T, port int, maxStreams uint32, ht hType) {
 		if err != nil {
 			return
 		}
-		transport, err := NewServerTransport("http2", conn, maxStreams, nil)
+		config := &ServerConfig{
+			MaxStreams: maxStreams,
+		}
+		transport, err := NewServerTransport("http2", conn, config)
 		if err != nil {
 			return
 		}
@@ -194,22 +197,33 @@ func (s *server) start(t *testing.T, port int, maxStreams uint32, ht hType) {
 		h := &testStreamHandler{transport.(*http2Server)}
 		switch ht {
 		case suspended:
-			go transport.HandleStreams(h.handleStreamSuspension)
+			go transport.HandleStreams(h.handleStreamSuspension,
+				func(ctx context.Context, method string) context.Context {
+					return ctx
+				})
 		case misbehaved:
 			go transport.HandleStreams(func(s *Stream) {
 				go h.handleStreamMisbehave(t, s)
+			}, func(ctx context.Context, method string) context.Context {
+				return ctx
 			})
 		case encodingRequiredStatus:
 			go transport.HandleStreams(func(s *Stream) {
 				go h.handleStreamEncodingRequiredStatus(t, s)
+			}, func(ctx context.Context, method string) context.Context {
+				return ctx
 			})
 		case invalidHeaderField:
 			go transport.HandleStreams(func(s *Stream) {
 				go h.handleStreamInvalidHeaderField(t, s)
+			}, func(ctx context.Context, method string) context.Context {
+				return ctx
 			})
 		default:
 			go transport.HandleStreams(func(s *Stream) {
 				go h.handleStream(t, s)
+			}, func(ctx context.Context, method string) context.Context {
+				return ctx
 			})
 		}
 	}
@@ -245,7 +259,10 @@ func setUp(t *testing.T, port int, maxStreams uint32, ht hType) (*server, Client
 		ct      ClientTransport
 		connErr error
 	)
-	ct, connErr = NewClientTransport(context.Background(), addr, ConnectOptions{})
+	target := TargetInfo{
+		Addr: addr,
+	}
+	ct, connErr = NewClientTransport(context.Background(), target, ConnectOptions{})
 	if connErr != nil {
 		t.Fatalf("failed to create transport: %v", connErr)
 	}
