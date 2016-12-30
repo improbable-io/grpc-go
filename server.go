@@ -890,7 +890,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 	method := sm[pos+1:]
 	srv, ok := s.m[service]
 	if !ok {
-		s.opts.unknownHandler(t, stream, trInfo.tr)
+		s.opts.unknownHandler(t, stream, trace)
 		return
 	}
 	// Unary RPC or Streaming RPC?
@@ -903,7 +903,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		return
 	}
 
-	s.opts.unknownHandler(t, stream, trInfo.tr)
+	s.opts.unknownHandler(t, stream, trace)
 }
 
 func handleUnknownStream(t transport.ServerTransport, stream *transport.Stream, tr trace.Trace) {
