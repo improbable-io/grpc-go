@@ -135,9 +135,10 @@ func Join(mds ...MD) MD {
 	}
 	return out
 }
-
-type mdIncomingKey struct{}
-type mdOutgoingKey struct{}
+// XXX(mwitkow): This is a *HACK* to be able to upgrade to gRPC-Go post change of Outgoing/Incoming.
+// It allows us to use new FromIncoming/FromOutgoing on the same context by sharing the same key.
+// THIS IS TEMPORARY, AND SHOULD BE REMOVED BEFORE JUNE 2017.
+type mdImprobableHackedKey struct{}
 
 // NewContext is a wrapper for NewOutgoingContext(ctx, md).  Deprecated.
 func NewContext(ctx context.Context, md MD) context.Context {
@@ -146,12 +147,12 @@ func NewContext(ctx context.Context, md MD) context.Context {
 
 // NewIncomingContext creates a new context with incoming md attached.
 func NewIncomingContext(ctx context.Context, md MD) context.Context {
-	return context.WithValue(ctx, mdIncomingKey{}, md)
+	return context.WithValue(ctx, mdImprobableHackedKey{}, md)
 }
 
 // NewOutgoingContext creates a new context with outgoing md attached.
 func NewOutgoingContext(ctx context.Context, md MD) context.Context {
-	return context.WithValue(ctx, mdOutgoingKey{}, md)
+	return context.WithValue(ctx, mdImprobableHackedKey{}, md)
 }
 
 // FromContext is a wrapper for FromIncomingContext(ctx).  Deprecated.
@@ -163,7 +164,7 @@ func FromContext(ctx context.Context) (md MD, ok bool) {
 // returned md should be immutable, writing to it may cause races.
 // Modification should be made to the copies of the returned md.
 func FromIncomingContext(ctx context.Context) (md MD, ok bool) {
-	md, ok = ctx.Value(mdIncomingKey{}).(MD)
+	md, ok = ctx.Value(mdImprobableHackedKey{}).(MD)
 	return
 }
 
@@ -171,6 +172,6 @@ func FromIncomingContext(ctx context.Context) (md MD, ok bool) {
 // returned md should be immutable, writing to it may cause races.
 // Modification should be made to the copies of the returned md.
 func FromOutgoingContext(ctx context.Context) (md MD, ok bool) {
-	md, ok = ctx.Value(mdOutgoingKey{}).(MD)
+	md, ok = ctx.Value(mdImprobableHackedKey{}).(MD)
 	return
 }
