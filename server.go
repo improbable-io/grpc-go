@@ -1239,12 +1239,12 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 			trInfo.tr.SetError()
 		}
 		errDesc := fmt.Sprintf("malformed method name: %q", stream.Method())
-		if err := t.WriteStatus(stream, status.New(codes.ResourceExhausted, errDesc)); err != nil {
+		if err := t.WriteStatus(stream, codes.InvalidArgument, errDesc); err != nil {
 			if trInfo != nil {
 				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
 				trInfo.tr.SetError()
 			}
-			grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
+			grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
 		}
 		if trInfo != nil {
 			trInfo.tr.Finish()
@@ -1255,25 +1255,6 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 	method := sm[pos+1:]
 	srv, ok := s.m[service]
 	if !ok {
-		if unknownDesc := s.opts.unknownStreamDesc; unknownDesc != nil {
-			s.processStreamingRPC(t, stream, nil, unknownDesc, trInfo)
-			return
-		}
-		if trInfo != nil {
-			trInfo.tr.LazyLog(&fmtStringer{"Unknown service %v", []interface{}{service}}, true)
-			trInfo.tr.SetError()
-		}
-		errDesc := fmt.Sprintf("unknown service %v", service)
-		if err := t.WriteStatus(stream, status.New(codes.Unimplemented, errDesc)); err != nil {
-			if trInfo != nil {
-				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-				trInfo.tr.SetError()
-			}
-			grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
-		}
-		if trInfo != nil {
-			trInfo.tr.Finish()
-		}
 		s.opts.unknownHandler(t, stream, trace)
 		return
 	}
@@ -1286,19 +1267,6 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		s.processStreamingRPC(t, stream, srv, sd, trInfo)
 		return
 	}
-	if trInfo != nil {
-		trInfo.tr.LazyLog(&fmtStringer{"Unknown method %v", []interface{}{method}}, true)
-		trInfo.tr.SetError()
-	}
-	if unknownDesc := s.opts.unknownStreamDesc; unknownDesc != nil {
-		s.processStreamingRPC(t, stream, nil, unknownDesc, trInfo)
-		return
-	}
-	errDesc := fmt.Sprintf("unknown method %v", method)
-	if err := t.WriteStatus(stream, status.New(codes.Unimplemented, errDesc)); err != nil {
-		if trInfo != nil {
-			trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-			trInfo.tr.SetError()
 
 	s.opts.unknownHandler(t, stream, trace)
 }
@@ -1314,7 +1282,7 @@ func handleUnknownStream(t transport.ServerTransport, stream *transport.Stream, 
 			tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
 			tr.SetError()
 		}
-		grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
+		grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
 	}
 	if tr != nil {
 		tr.Finish()
